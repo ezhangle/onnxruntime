@@ -34,7 +34,8 @@
 #include "core/framework/session_state.h"
 #include "core/framework/session_state_initializer.h"
 #include "core/framework/tensorprotoutils.h"
-#include "core/framework/tensorutils.h"
+#include "core/framework/path_lib.h"
+#include "core/optimizer/transformer_memcpy.h"
 #include "core/framework/utils.h"
 #include "core/optimizer/graph_transformer.h"
 #include "core/optimizer/graph_transformer_mgr.h"
@@ -301,8 +302,8 @@ class InferenceSession::Impl {
         ORT_ENFORCE(subgraph_session_state, "CreateSubgraphSessionState should have created an entry earlier.");
 
         // setup everything required to execute the subgraph and save it in subgraph_session_state
-        SessionStateInitializer initializer{subgraph, *subgraph_session_state,
-                                            execution_providers_, kernel_registry_manager_};
+        SessionStateInitializer initializer{model_location_, subgraph, *subgraph_session_state, execution_providers_,
+                                            kernel_registry_manager_};
 
         ORT_RETURN_IF_ERROR(initializer.CreatePlan(node.ImplicitInputDefs(),
                                                    session_options_.enable_sequential_execution));
@@ -358,7 +359,7 @@ class InferenceSession::Impl {
       // Register 2nd registries into KernelRegistryManager.
       ORT_RETURN_IF_ERROR(kernel_registry_manager_.RegisterKernels(execution_providers_));
 
-      SessionStateInitializer session_initializer{graph, session_state_, execution_providers_,
+      SessionStateInitializer session_initializer{model_location_, graph, session_state_, execution_providers_,
                                                   kernel_registry_manager_};
 
       // create SessionState for subgraphs as it's needed by the transformers
@@ -949,6 +950,8 @@ class InferenceSession::Impl {
   bool is_inited_ = false;                       // GUARDED_BY(session_mutex_)
 
   InsertCastTransformer insert_cast_transformer_;
+  // TODO: fill it
+  std::basic_string<PATH_CHAR_TYPE> model_location_;
 };  // namespace onnxruntime
 
 //

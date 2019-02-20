@@ -316,8 +316,26 @@ ORT_API_STATUS(OrtGetStringTensorDataLength, _In_ const OrtValue* value, _Out_ s
 ORT_API_STATUS(OrtGetStringTensorContent, _In_ const OrtValue* value, _Out_ void* s, size_t s_len,
                _Out_ size_t* offsets, size_t offsets_len);
 
-ORT_API_STATUS(OrtTensorProtoToOrtValue, _Inout_ OrtAllocator* allocator,
-               _In_ const void* input, int input_len, _Out_ OrtValue** out);
+/**
+ *
+ * @param input
+ * @param input_len
+ * @param input_file_path A local file path of where the input was loaded from. Can be NULL
+ * @param preallocated A preallocated buffer for the tensor
+ * @param preallocated_size Length of the preallocated buffer in bytes, can be computed from
+ *          the OrtGetTensorMemSizeInBytesFromTensorProto function
+ * @param out
+ * @return
+ */
+ORT_API_STATUS(OrtTensorProtoToOrtValue, _In_ const void* input, int input_len,
+               _In_opt_ const ORTCHAR_T* input_file_path, _Inout_ void* preallocated, size_t preallocated_size,
+               _Out_ OrtValue** out);
+
+/**
+ * calculate the memory requirement for the OrtTensorProtoToOrtValue function
+ */
+ORT_API_STATUS(OrtGetTensorMemSizeInBytesFromTensorProto, _In_ const void* input, int input_len, size_t alignment,
+               size_t* out);
 
 /**
  * Don't free the returned value

@@ -10,7 +10,7 @@
 #include "core/common/common.h"
 #include "core/platform/env.h"
 #include "core/session/onnxruntime_cxx_api.h"
-#include "path_lib.h"
+#include <core/framework/path_lib.h>
 //TODO: delete this
 #include <core/platform/ort_mutex.h>
 #include <core/framework/data_types.h>
@@ -182,8 +182,8 @@ static Status SortTensorFileNames(std::vector<std::basic_string<PATH_CHAR_TYPE>>
   return Status::OK();
 }
 
-Status LoopDataFile(int test_data_pb_fd, OrtAllocator* env,
-                    const std::vector<onnx::ValueInfoProto> value_info, std::unordered_map<std::string, OrtValue*>& name_data_map, std::ostringstream& oss) {
+Status LoopDataFile(int test_data_pb_fd, const std::vector<onnx::ValueInfoProto> value_info,
+                    std::unordered_map<std::string, OrtValue*>& name_data_map, std::ostringstream& oss) {
   google::protobuf::io::FileInputStream f(test_data_pb_fd);
   f.SetCloseOnDelete(true);
   google::protobuf::io::CodedInputStream coded_input(&f);
@@ -228,7 +228,10 @@ Status LoopDataFile(int test_data_pb_fd, OrtAllocator* env,
       case proto::TraditionalMLData::kTensor: {
         OrtValue* temp_value;
         std::string s = data.tensor().SerializeAsString();
-        ORT_THROW_ON_ERROR(OrtTensorProtoToOrtValue(env, s.data(), (int)s.size(), &temp_value));
+        size_t len;
+        ORT_THROW_ON_ERROR(OrtGetTensorMemSizeInBytesFromTensorProto(s.data(), (int)s.size(), 0, &len));
+        char* p = len == 0 ? nullptr : new char[len];
+        ORT_THROW_ON_ERROR(OrtTensorProtoToOrtValue(s.data(), (int)s.size(), nullptr, p, len, &temp_value));
         gvalue.reset(temp_value);
         is_tensor = true;
       } break;
@@ -484,7 +487,7 @@ Status OnnxTestCase::LoadTestData(OrtSession* session, size_t id, std::unordered
       std::lock_guard<OrtMutex> l(m_);
       oss << debuginfo_strings[id];
     }
-    st = LoopDataFile(test_data_pb_fd, allocator, is_input ? input_value_info_ : output_value_info_, name_data_map, oss);
+    st = LoopDataFile(test_data_pb_fd, is_input ? input_value_info_ : output_value_info_, name_data_map, oss);
     {
       std::lock_guard<OrtMutex> l(m_);
       debuginfo_strings[id] = oss.str();
@@ -556,7 +559,10 @@ Status OnnxTestCase::ConvertTestData(OrtSession* session, const std::vector<onnx
     const onnx::TensorProto& input = test_data_pbs[input_index];
     std::string s = input.SerializeAsString();
     MLValue* v1;
-    ORT_THROW_ON_ERROR(OrtTensorProtoToOrtValue(allocator, s.data(), (int)s.size(), (OrtValue**)&v1));
+    size_t len;
+    ORT_THROW_ON_ERROR(OrtGetTensorMemSizeInBytesFromTensorProto(s.data(), (int)s.size(), 0, &len));
+    char* p = len == 0 ? nullptr : new char[len];
+    ORT_THROW_ON_ERROR(OrtTensorProtoToOrtValue(s.data(), (int)s.size(), nullptr, p, len, (OrtValue**)&v1));
     out.insert(std::make_pair(name, (OrtValue*)v1));
   }
   return Status::OK();

@@ -16,16 +16,44 @@
 #endif
 #include "core/session/onnxruntime_c_api.h"
 
+using PATH_CHAR_TYPE = ORTCHAR_T;
+#ifndef ORT_TSTR
 #ifdef _WIN32
-typedef wchar_t PATH_CHAR_TYPE;
 #define ORT_TSTR(X) L##X
 #else
-typedef char PATH_CHAR_TYPE;
 #define ORT_TSTR(X) (X)
+#endif
 #endif
 
 template <typename T>
 long MyStrtol(const T* nptr, T** endptr, int base);
+
+/**
+ * Convert a C string to ssize_t(or ptrdiff_t)
+ * @return the converted integer value.
+ */
+template <typename T>
+ptrdiff_t MyStrtoPtrDiff(const T* nptr, T** endptr, int base);
+
+template <>
+inline ptrdiff_t MyStrtoPtrDiff<wchar_t>(const wchar_t* nptr, wchar_t** endptr, int base) {
+#ifdef _WIN32
+  // TODO: on x86_32, it should be wcstol
+  return _wcstoi64(nptr, endptr, base);
+#else
+  return wcstol(nptr, endptr, base);
+#endif
+}
+
+template <>
+inline ptrdiff_t MyStrtoPtrDiff<char>(const char* nptr, char** endptr, int base) {
+#ifdef _WIN32
+  // TODO: on x86_32, it should be strtol
+  return _strtoi64(nptr, endptr, base);
+#else
+  return strtol(nptr, endptr, base);
+#endif
+}
 
 template <>
 inline long MyStrtol<char>(const char* nptr, char** endptr, int base) {
@@ -50,14 +78,7 @@ inline int MyStrCmp<wchar_t>(const wchar_t* s1, const wchar_t* s2) {
   return wcscmp(s1, s2);
 }
 
-enum class FileType { TYPE_BLK,
-                      TYPE_CHR,
-                      TYPE_DIR,
-                      TYPE_FIFO,
-                      TYPE_LNK,
-                      TYPE_REG,
-                      TYPE_SOCK,
-                      TYPE_UNKNOWN };
+enum class FileType { TYPE_BLK, TYPE_CHR, TYPE_DIR, TYPE_FIFO, TYPE_LNK, TYPE_REG, TYPE_SOCK, TYPE_UNKNOWN };
 
 template <typename PATH_CHAR_TYPE>
 PATH_CHAR_TYPE GetPathSep();
