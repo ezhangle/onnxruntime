@@ -183,7 +183,7 @@ static Status SortTensorFileNames(std::vector<std::basic_string<PATH_CHAR_TYPE>>
 }
 
 Status LoopDataFile(int test_data_pb_fd, const std::vector<onnx::ValueInfoProto> value_info,
-                    std::unordered_map<std::string, OrtValue*>& name_data_map, std::ostringstream& oss) {
+                    std::unordered_map<std::string, OrtValue*>& name_data_map, std::vector<OrtDeleter*> deleters, std::ostringstream& oss) {
   google::protobuf::io::FileInputStream f(test_data_pb_fd);
   f.SetCloseOnDelete(true);
   google::protobuf::io::CodedInputStream coded_input(&f);
@@ -231,7 +231,11 @@ Status LoopDataFile(int test_data_pb_fd, const std::vector<onnx::ValueInfoProto>
         size_t len;
         ORT_THROW_ON_ERROR(OrtGetTensorMemSizeInBytesFromTensorProto(s.data(), (int)s.size(), 0, &len));
         char* p = len == 0 ? nullptr : new char[len];
-        ORT_THROW_ON_ERROR(OrtTensorProtoToOrtValue(s.data(), (int)s.size(), nullptr, p, len, &temp_value));
+        OrtDeleter* d;
+        ORT_THROW_ON_ERROR(OrtTensorProtoToOrtValue(s.data(), (int)s.size(), nullptr, p, len, &temp_value, &d));
+        if(d!= nullptr){
+          deleters.push_back(d);
+        }
         gvalue.reset(temp_value);
         is_tensor = true;
       } break;
@@ -308,6 +312,7 @@ class OnnxTestCase : public ITestCase {
   bool post_processing_;
   Status ParseModel();
   Status ParseConfig();
+  std::vector<OrtDeleter*> deleters_;
   ORT_DISALLOW_COPY_ASSIGNMENT_AND_MOVE(OnnxTestCase);
 
  public:
@@ -487,7 +492,7 @@ Status OnnxTestCase::LoadTestData(OrtSession* session, size_t id, std::unordered
       std::lock_guard<OrtMutex> l(m_);
       oss << debuginfo_strings[id];
     }
-    st = LoopDataFile(test_data_pb_fd, is_input ? input_value_info_ : output_value_info_, name_data_map, oss);
+    st = LoopDataFile(test_data_pb_fd, is_input ? input_value_info_ : output_value_info_, name_data_map, deleters_, oss);
     {
       std::lock_guard<OrtMutex> l(m_);
       debuginfo_strings[id] = oss.str();
@@ -520,6 +525,45 @@ Status OnnxTestCase::LoadTestData(OrtSession* session, size_t id, std::unordered
   ORT_RETURN_IF_ERROR(LoadTensors(test_data_pb_files, &test_data_pbs));
   ORT_RETURN_IF_ERROR(ConvertTestData(session, test_data_pbs, is_input, name_data_map));
   return Status::OK();
+}
+
+static ONNXTensorElementDataType GetTensorElementType(const ONNX_NAMESPACE::TensorProto& tensor_proto){
+  switch(tensor_proto.data_type()){
+    case ONNX_NAMESPACE::TensorProto_DataType_FLOAT:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
+    case ONNX_NAMESPACE::TensorProto_DataType_UINT8:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8;
+    case ONNX_NAMESPACE::TensorProto_DataType_INT8:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8;
+    case ONNX_NAMESPACE::TensorProto_DataType_UINT16:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16;
+    case ONNX_NAMESPACE::TensorProto_DataType_INT16:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16;
+    case ONNX_NAMESPACE::TensorProto_DataType_INT32:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32;
+    case ONNX_NAMESPACE::TensorProto_DataType_INT64:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64;
+    case ONNX_NAMESPACE::TensorProto_DataType_STRING:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING;
+    case ONNX_NAMESPACE::TensorProto_DataType_BOOL:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL;
+    case ONNX_NAMESPACE::TensorProto_DataType_FLOAT16:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16;
+    case ONNX_NAMESPACE::TensorProto_DataType_DOUBLE:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE;
+    case ONNX_NAMESPACE::TensorProto_DataType_UINT32:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32;
+    case ONNX_NAMESPACE::TensorProto_DataType_UINT64:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64;
+    case ONNX_NAMESPACE::TensorProto_DataType_COMPLEX64:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64;
+    case ONNX_NAMESPACE::TensorProto_DataType_COMPLEX128:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128;
+    case ONNX_NAMESPACE::TensorProto_DataType_BFLOAT16:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16;
+    default:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+  }
 }
 
 Status OnnxTestCase::ConvertTestData(OrtSession* session, const std::vector<onnx::TensorProto>& test_data_pbs,
@@ -562,7 +606,13 @@ Status OnnxTestCase::ConvertTestData(OrtSession* session, const std::vector<onnx
     size_t len;
     ORT_THROW_ON_ERROR(OrtGetTensorMemSizeInBytesFromTensorProto(s.data(), (int)s.size(), 0, &len));
     char* p = len == 0 ? nullptr : new char[len];
-    ORT_THROW_ON_ERROR(OrtTensorProtoToOrtValue(s.data(), (int)s.size(), nullptr, p, len, (OrtValue**)&v1));
+    if(p != nullptr){
+      ORT_THROW_ON_ERROR(OrtInitializeBufferForTensor(p,len, GetTensorElementType(input)));
+    }
+    OrtDeleter* d;
+    ORT_THROW_ON_ERROR(OrtTensorProtoToOrtValue(s.data(), (int)s.size(), nullptr, p, len, (OrtValue**)&v1, &d));
+    if(d!=nullptr)
+      deleters_.push_back(d);
     out.insert(std::make_pair(name, (OrtValue*)v1));
   }
   return Status::OK();

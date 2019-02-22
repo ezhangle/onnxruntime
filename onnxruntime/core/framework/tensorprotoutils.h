@@ -10,6 +10,7 @@
 #include "core/common/status.h"
 #include "core/framework/allocator.h"
 #include "core/framework/ml_value.h"
+#include "core/framework/mem_buffer.h"
 #include "core/session/onnxruntime_c_api.h"
 #include "core/graph/onnx_protobuf.h"
 
@@ -22,11 +23,12 @@ namespace onnxruntime {
 class Tensor;
 namespace utils {
 std::vector<int64_t> GetTensorShapeFromTensorShapeProto(const ONNX_NAMESPACE::TensorShapeProto& tensor_shape_proto);
-common::Status TensorProtoToMLValue(const std::basic_string<ORTCHAR_T>& tensor_proto_path,
-                                    const ONNX_NAMESPACE::TensorProto& input, AllocatorPtr allocator,
-                                    void* preallocated, size_t preallocated_size, MLValue& value);
+common::Status TensorProtoToMLValue(const ORTCHAR_T* tensor_proto_path,
+                                    const ONNX_NAMESPACE::TensorProto& input, const MemBuffer& m, MLValue& value, OrtDeleter& deleter);
 // This function doesn't support string tensors
 ONNX_NAMESPACE::TensorProto::DataType GetTensorProtoType(const Tensor& tensor);
+
+ONNXTensorElementDataType GetTensorElementType(const ONNX_NAMESPACE::TensorProto& tensor_proto);
 
 // How much memory it will need for putting the content of this tensor into a plain array
 // complex64/complex128 tensors are not supported.

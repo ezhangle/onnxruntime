@@ -356,21 +356,9 @@ std::vector<int64_t> GetTensorShapeFromTensorShapeProto(const ONNX_NAMESPACE::Te
   return tensor_shape_vec;
 }
 
-// by default, do nothing
-template <typename T>
-void InitTensor(Tensor*, int64_t /*tensor_size*/) {}
-
-template <>
-void InitTensor<std::string>(Tensor* t, int64_t tensor_size) {
-  std::string* ptr = t->MutableData<std::string>();
-  for (int64_t i = 0, n = tensor_size; i < n; ++i) {
-    new (ptr + i) std::string();
-  }
-}
-
 template <typename T>
 common::Status GetTensorByTypeFromTensorProto(const TensorProto& tensor_proto, const TensorShape& tensor_shape,
-                                              std::unique_ptr<Tensor>* p_tensor, AllocatorPtr alloc, void* preallocated,
+                                              std::unique_ptr<Tensor>* p_tensor, const OrtAllocatorInfo& alloc, void* preallocated,
                                               size_t preallocated_size) {
   int64_t tensor_size = tensor_shape.Size();
   // tensor_size could be zero. see test_slice_start_out_of_bounds\test_data_set_0\output_0.pb
@@ -388,12 +376,7 @@ common::Status GetTensorByTypeFromTensorProto(const TensorProto& tensor_proto, c
                            size_to_allocate, ", got ", preallocated_size);
 
   std::unique_ptr<Tensor> t;
-  if (preallocated) {
-    t = std::make_unique<Tensor>(DataTypeImpl::GetType<T>(), tensor_shape, preallocated, alloc->Info());
-    InitTensor<T>(t.get(), tensor_size);
-  } else {
-    t = std::make_unique<Tensor>(DataTypeImpl::GetType<T>(), tensor_shape, alloc);
-  }
+  t = std::make_unique<Tensor>(DataTypeImpl::GetType<T>(), tensor_shape, preallocated, alloc);
   ORT_RETURN_IF_ERROR(::onnxruntime::utils::UnpackTensor(tensor_proto, t->MutableData<T>(), tensor_size));
   *p_tensor = std::move(t);
   return common::Status::OK();
@@ -405,9 +388,34 @@ common::Status GetTensorByTypeFromTensorProto(const TensorProto& tensor_proto, c
                                                           preallocated, preallocated_size));                \
     break;
 
-Status TensorProtoToMLValue(const std::basic_string<ORTCHAR_T>& tensor_proto_path,
-                            const ONNX_NAMESPACE::TensorProto& tensor_proto, AllocatorPtr allocator, void* preallocated,
-                            size_t preallocated_size, MLValue& value) {
+struct UnInitializeParam{
+  void* preallocated;
+  size_t preallocated_size;
+  ONNXTensorElementDataType ele_type;
+};
+
+static void DeleteHeapBuffer(void* param){
+  UnInitializeParam* p = reinterpret_cast<UnInitializeParam*>(param);
+  OrtUninitializeBuffer(p->preallocated,p->preallocated_size,p->ele_type);
+}
+
+
+Status TensorProtoToMLValue(const ORTCHAR_T* tensor_proto_path,
+                            const ONNX_NAMESPACE::TensorProto& tensor_proto, const MemBuffer& m, MLValue& value,
+                            OrtDeleter& deleter) {
+  const OrtAllocatorInfo& allocator = m.GetAllocInfo();
+  void* preallocated = m.GetBuffer();
+  size_t preallocated_size = m.GetLen();
+  if(preallocated != nullptr){
+    OrtStatus* status = OrtInitializeBufferForTensor(preallocated, preallocated_size,
+        utils::GetTensorElementType(tensor_proto));
+    if(status!= nullptr) {
+      OrtReleaseStatus(status);
+      return Status(common::ONNXRUNTIME, common::FAIL, "initialize preallocated buffer failed");
+    }
+    deleter.f = DeleteHeapBuffer;
+    deleter.param = new UnInitializeParam{preallocated,preallocated_size,utils::GetTensorElementType(tensor_proto)};
+  }
   std::unique_ptr<Tensor> p_tensor;
   {
     std::vector<int64_t> tensor_shape_vec = GetTensorShapeFromTensorProto(tensor_proto);
@@ -448,6 +456,45 @@ Status TensorProtoToMLValue(const std::basic_string<ORTCHAR_T>& tensor_proto_pat
              DataTypeImpl::GetType<Tensor>(),
              DataTypeImpl::GetType<Tensor>()->GetDeleteFunc());
   return Status::OK();
+}
+
+ONNXTensorElementDataType GetTensorElementType(const ONNX_NAMESPACE::TensorProto& tensor_proto){
+  switch(tensor_proto.data_type()){
+    case TensorProto_DataType_FLOAT:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
+    case TensorProto_DataType_UINT8:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8;
+    case TensorProto_DataType_INT8:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8;
+    case TensorProto_DataType_UINT16:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16;
+    case TensorProto_DataType_INT16:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16;
+    case TensorProto_DataType_INT32:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32;
+    case TensorProto_DataType_INT64:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64;
+    case TensorProto_DataType_STRING:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING;
+    case TensorProto_DataType_BOOL:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL;
+    case TensorProto_DataType_FLOAT16:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16;
+    case TensorProto_DataType_DOUBLE:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE;
+    case TensorProto_DataType_UINT32:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32;
+    case TensorProto_DataType_UINT64:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64;
+    case TensorProto_DataType_COMPLEX64:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX64;
+    case TensorProto_DataType_COMPLEX128:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_COMPLEX128;
+    case TensorProto_DataType_BFLOAT16:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16;
+    default:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_UNDEFINED;
+  }
 }
 
 TensorProto::DataType GetTensorProtoType(const Tensor& tensor) {

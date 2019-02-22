@@ -63,13 +63,8 @@ class ExecutionFrame {
                                                 const OrtAllocatorInfo& location,
                                                 const TensorShape& shape,
                                                 bool create_fence = false);
-  const MLValue& GetMLValue(int mlvalue_index) const {
-    ORT_ENFORCE(mlvalue_index >= 0 && static_cast<size_t>(mlvalue_index) < all_values_.size());
-    return all_values_[mlvalue_index];
-  }
-
-  MLValue& GetMutableMLValue(int mlvalue_index) {
-    ORT_ENFORCE(mlvalue_index >= 0 && static_cast<size_t>(mlvalue_index) < all_values_.size());
+  const MLValue& GetMLValue(size_t mlvalue_index) const {
+    ORT_ENFORCE(mlvalue_index < all_values_.size());
     return all_values_[mlvalue_index];
   }
 

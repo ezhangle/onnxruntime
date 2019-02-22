@@ -484,18 +484,56 @@ ORT_API_STATUS_IMPL(OrtGetStringTensorContent, _In_ const OrtValue* value,
 
 ORT_API_STATUS_IMPL(OrtTensorProtoToOrtValue, _In_ const void* input, int input_len,
                     _In_opt_ const ORTCHAR_T* input_file_path, _Inout_ void* preallocated, size_t preallocated_size,
-                    _Out_ OrtValue** out) {
+                    _Out_ OrtValue** out,_Out_ OrtDeleter** deleter) {
   API_IMPL_BEGIN
+  OrtAllocatorInfo* cpuAllocatorInfo;
+  auto st = OrtCreateAllocatorInfo("Cpu", OrtDeviceAllocator, 0, OrtMemTypeDefault, &cpuAllocatorInfo);
+  if(st != nullptr)
+    return st;
   ::ONNX_NAMESPACE::TensorProto proto;
   if (!proto.ParseFromArray(input, input_len)) {
     return OrtCreateStatus(ORT_FAIL, "parse input tensor proto failed");
   }
   std::unique_ptr<MLValue> value = std::make_unique<MLValue>();
-  ORT_C_API_RETURN_IF_ERROR(
-      utils::TensorProtoToMLValue(input_file_path, proto, nullptr, preallocated, preallocated_size, *value));
+  std::unique_ptr<OrtDeleter> del= std::make_unique<OrtDeleter>();
+  auto status =
+      utils::TensorProtoToMLValue(input_file_path, proto, MemBuffer(preallocated, preallocated_size, *cpuAllocatorInfo)
+          , *value, *del);
+  OrtReleaseAllocatorInfo(cpuAllocatorInfo);
+  if(!status.IsOK()){
+    return ToOrtStatus(status);
+  }
   *out = reinterpret_cast<OrtValue*>(value.release());
+  if(del->f != nullptr){
+    *deleter = del.release();
+  } else
+    *deleter = nullptr;
   return nullptr;
   API_IMPL_END
+}
+
+ORT_API_STATUS_IMPL(OrtInitializeBufferForTensor, _In_opt_ void* input, size_t input_len,
+    enum ONNXTensorElementDataType type){
+  API_IMPL_BEGIN
+  if(type != ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING || input == nullptr)
+    return nullptr;
+  size_t tensor_size = input_len / sizeof(std::string);
+  std::string* ptr = reinterpret_cast<std::string*>(input);
+  for (size_t i = 0, n = tensor_size; i < n; ++i) {
+    new (ptr + i) std::string();
+  }
+  return nullptr;
+  API_IMPL_END
+}
+
+ORT_API(void, OrtUninitializeBuffer, _In_opt_ void* input, size_t input_len, enum ONNXTensorElementDataType type){
+    if(type != ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING || input == nullptr) return;
+    size_t tensor_size = input_len / sizeof(std::string);
+    std::string* ptr = reinterpret_cast<std::string*>(input);
+    using std::string;
+    for (size_t i = 0, n = tensor_size; i < n; ++i) {
+      ptr[i].~string();
+    }
 }
 
 ORT_API_STATUS_IMPL(OrtGetTensorMemSizeInBytesFromTensorProto, _In_ const void* input, int input_len, size_t alignment,

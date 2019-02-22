@@ -58,6 +58,11 @@ extern "C" {
 #define NO_EXCEPTION
 #endif
 
+typedef struct OrtDeleter{
+  void (*f)(void* param);
+  void* param;
+} OrtDeleter;
+
 // Copied from TensorProto::DataType
 // Currently, Ort doesn't support complex64, complex128, bfloat16 types
 typedef enum ONNXTensorElementDataType {
@@ -329,13 +334,26 @@ ORT_API_STATUS(OrtGetStringTensorContent, _In_ const OrtValue* value, _Out_ void
  */
 ORT_API_STATUS(OrtTensorProtoToOrtValue, _In_ const void* input, int input_len,
                _In_opt_ const ORTCHAR_T* input_file_path, _Inout_ void* preallocated, size_t preallocated_size,
-               _Out_ OrtValue** out);
+               _Out_ OrtValue** out,_Out_ OrtDeleter** deleter);
 
 /**
  * calculate the memory requirement for the OrtTensorProtoToOrtValue function
  */
 ORT_API_STATUS(OrtGetTensorMemSizeInBytesFromTensorProto, _In_ const void* input, int input_len, size_t alignment,
                size_t* out);
+
+
+/**
+ *  Initialize a buffer for being used with the OrtCreateTensorWithDataAsOrtValue function
+ *
+ */
+ORT_API_STATUS(OrtInitializeBufferForTensor, _In_opt_ void* input, size_t input_len, enum ONNXTensorElementDataType type);
+
+/**
+ * Uninitialize the buffer that was initialized by the OrtInitializeBufferForTensor function
+ *
+ */
+ORT_API(void, OrtUninitializeBuffer, _In_opt_ void* input, size_t input_len, enum ONNXTensorElementDataType type);
 
 /**
  * Don't free the returned value

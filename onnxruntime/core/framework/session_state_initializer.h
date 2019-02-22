@@ -34,8 +34,7 @@ class SessionStateInitializer {
 
   // initialize tensors, and save. save kernels and input/output node mappings
   // @param enable_memory_pattern
-  common::Status InitializeAndSave(bool enable_memory_pattern,
-                                   const std::vector<NodeArg*>* implicit_inputs = nullptr);
+  common::Status InitializeAndSave(const std::vector<NodeArg*>* implicit_inputs);
 
  private:
   const std::basic_string<PATH_CHAR_TYPE>& graph_loc_;

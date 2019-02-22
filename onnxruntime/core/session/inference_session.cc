@@ -308,8 +308,7 @@ class InferenceSession::Impl {
         ORT_RETURN_IF_ERROR(initializer.CreatePlan(node.ImplicitInputDefs(),
                                                    session_options_.enable_sequential_execution));
 
-        ORT_RETURN_IF_ERROR(initializer.InitializeAndSave(session_state_.GetEnableMemoryPattern(),
-                                                          &node.ImplicitInputDefs()));
+        ORT_RETURN_IF_ERROR(initializer.InitializeAndSave(&node.ImplicitInputDefs()));
 
         // LOGS(*session_logger_, VERBOSE) << std::make_pair(subgraph_info.session_state->GetExecutionPlan(),
         //                                                   &*subgraph_info.session_state);
@@ -375,7 +374,7 @@ class InferenceSession::Impl {
       ORT_RETURN_IF_ERROR(graph.Resolve());
 
       ORT_RETURN_IF_ERROR(session_initializer.CreatePlan({}, session_options_.enable_sequential_execution));
-      ORT_RETURN_IF_ERROR(session_initializer.InitializeAndSave(session_state_.GetEnableMemoryPattern()));
+      ORT_RETURN_IF_ERROR(session_initializer.InitializeAndSave(nullptr));
 
       // handle any subgraphs
       ORT_RETURN_IF_ERROR(InitializeSubgraphSessions(graph, session_state_));
