@@ -25,6 +25,7 @@ ONNX_CPU_OPERATOR_KERNEL(
     Scatter,
     9,
     KernelDefBuilder()
+        .MayInplace(0, 0)
         .TypeConstraint("T", DataTypeImpl::AllTensorTypes())
         .TypeConstraint("Tind", std::vector<MLDataType>{DataTypeImpl::GetTensorType<int32_t>(), DataTypeImpl::GetTensorType<int64_t>()}),
     Scatter);
@@ -53,19 +54,21 @@ Status CopyScatterData(const Tensor* data_input, const Tensor* indecies_input, c
   const uint8_t* src_base = reinterpret_cast<const uint8_t*>(data_input->DataRaw());
   uint8_t* dst_base = reinterpret_cast<uint8_t*>(data_output->MutableDataRaw());
   const bool is_string_type = data_input->DataType() == DataTypeImpl::GetType<std::string>();
-  // Copy input to output first and then poke updates over it
-  // TODO: How to copy and scatter at the same time?
-  if (is_string_type) {
-    const std::string* str_begin = data_input->template Data<std::string>();
-    const std::string* str_end = str_begin + input_elements;
-    std::string* dst = data_output->template MutableData<std::string>();
-    std::copy(str_begin, str_end, dst);
-  } else {
-    memcpy(dst_base, src_base, input_elements * element_bytes);
+
+  // We allow runtime to re-use input for output. If input/output Tensor* are the same
+  // we do not copy
+  if (data_input != data_output) {
+    if (is_string_type) {
+      const std::string* str_begin = data_input->template Data<std::string>();
+      const std::string* str_end = str_begin + input_elements;
+      std::string* dst = data_output->template MutableData<std::string>();
+      std::copy(str_begin, str_end, dst);
+    } else {
+      memcpy(dst_base, src_base, input_elements * element_bytes);
+    }
   }
 
   // Now poke updates
-  // TODO: Investigate how to re-use the input Tensor for the output
   std::vector<int64_t> dim_weights(input_data_shape.GetDims().size(), 0);
 
   // Reverse weights order
