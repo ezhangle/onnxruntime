@@ -394,11 +394,11 @@ struct UnInitializeParam{
   ONNXTensorElementDataType ele_type;
 };
 
-static void DeleteHeapBuffer(void* param){
+static void DeleteHeapBuffer(void* param) noexcept {
   UnInitializeParam* p = reinterpret_cast<UnInitializeParam*>(param);
   OrtUninitializeBuffer(p->preallocated,p->preallocated_size,p->ele_type);
+  delete p;
 }
-
 
 Status TensorProtoToMLValue(const ORTCHAR_T* tensor_proto_path,
                             const ONNX_NAMESPACE::TensorProto& tensor_proto, const MemBuffer& m, MLValue& value,

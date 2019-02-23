@@ -59,7 +59,7 @@ extern "C" {
 #endif
 
 typedef struct OrtDeleter{
-  void (*f)(void* param);
+  void(ORT_API_CALL* f)(void* param) NO_EXCEPTION;
   void* param;
 } OrtDeleter;
 

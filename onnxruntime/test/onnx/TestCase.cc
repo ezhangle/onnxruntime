@@ -345,6 +345,12 @@ class OnnxTestCase : public ITestCase {
     return test_case_name_;
   }
   ::onnxruntime::common::Status LoadTestData(OrtSession* session, size_t id, std::unordered_map<std::string, OrtValue*>&, bool is_input) override;
+  ~OnnxTestCase() override {
+    for (OrtDeleter* d : deleters_) {
+      d->f(d->param);
+      delete d;
+    }
+  }
 };
 
 Status OnnxTestCase::loadModelFile(const PATH_CHAR_TYPE* model_url, ONNX_NAMESPACE::ModelProto** model_pb) {
